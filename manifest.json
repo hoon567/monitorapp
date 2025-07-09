@@ -1,0 +1,22 @@
+{
+  "name": "주식 모니터링 앱",
+  "short_name": "주식모니터",
+  "description": "실시간 주식 가격 모니터링 및 알림 앱",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#3b82f6",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
