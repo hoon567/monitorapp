@@ -1,0 +1,498 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>주식 모니터링 앱</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#3b82f6">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="주식 모니터">
+    <link rel="apple-touch-icon" href="icon-192.png">
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // Lucide React 아이콘들을 SVG로 구현
+        const Bell = ({ size = 24, className = "" }) => (
+            <svg width={size} height={size} className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-5 5-5-5h5V3h0z"/>
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/>
+            </svg>
+        );
+
+        const Plus = ({ size = 24 }) => (
+            <svg width={size} height={size} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <line x1="12" y1="5" x2="12" y2="19" strokeWidth="2" strokeLinecap="round"/>
+                <line x1="5" y1="12" x2="19" y2="12" strokeWidth="2" strokeLinecap="round"/>
+            </svg>
+        );
+
+        const Trash2 = ({ size = 24 }) => (
+            <svg width={size} height={size} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <polyline points="3,6 5,6 21,6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="m19,6v14a2,2 0 0,1 -2,2H7a2,2 0 0,1 -2,-2V6m3,0V4a2,2 0 0,1 2,-2h4a2,2 0 0,1 2,2v2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <line x1="10" y1="11" x2="10" y2="17" strokeWidth="2" strokeLinecap="round"/>
+                <line x1="14" y1="11" x2="14" y2="17" strokeWidth="2" strokeLinecap="round"/>
+            </svg>
+        );
+
+        const TrendingUp = ({ size = 24, className = "" }) => (
+            <svg width={size} height={size} className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <polyline points="22,7 13.5,15.5 8.5,10.5 2,17" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <polyline points="16,7 22,7 22,13" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+        );
+
+        const TrendingDown = ({ size = 24, className = "" }) => (
+            <svg width={size} height={size} className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <polyline points="22,17 13.5,8.5 8.5,13.5 2,7" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                <polyline points="16,17 22,17 22,11" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+        );
+
+        const StockMonitorApp = () => {
+            const [watchlist, setWatchlist] = useState(() => {
+                const saved = localStorage.getItem('watchlist');
+                return saved ? JSON.parse(saved) : [];
+            });
+            
+            const [portfolio, setPortfolio] = useState(() => {
+                const saved = localStorage.getItem('portfolio');
+                return saved ? JSON.parse(saved) : [];
+            });
+            
+            const [notifications, setNotifications] = useState(() => {
+                const saved = localStorage.getItem('notifications');
+                return saved ? JSON.parse(saved) : [];
+            });
+            
+            const [stockData, setStockData] = useState({});
+            const [loading, setLoading] = useState(false);
+            const [newSymbol, setNewSymbol] = useState('');
+            const [newPortfolioStock, setNewPortfolioStock] = useState({
+                symbol: '',
+                quantity: '',
+                avgPrice: ''
+            });
+
+            // 데이터 저장
+            useEffect(() => {
+                localStorage.setItem('watchlist', JSON.stringify(watchlist));
+            }, [watchlist]);
+
+            useEffect(() => {
+                localStorage.setItem('portfolio', JSON.stringify(portfolio));
+            }, [portfolio]);
+
+            useEffect(() => {
+                localStorage.setItem('notifications', JSON.stringify(notifications));
+            }, [notifications]);
+
+            // 야후 파이낸스 API를 통해 실제 주식 데이터 가져오기
+            const fetchStockData = async (symbols) => {
+                if (symbols.length === 0) return;
+                
+                setLoading(true);
+                try {
+                    const results = {};
+                    
+                    // 각 심볼별로 개별 요청 (CORS 문제 해결)
+                    for (const symbol of symbols) {
+                        try {
+                            const response = await fetch(`https://query1.finance.yahoo.com/v8/finance/chart/${symbol}?interval=1d&range=2d`);
+                            const data = await response.json();
+                            
+                            if (data.chart && data.chart.result && data.chart.result[0]) {
+                                const stock = data.chart.result[0];
+                                const currentPrice = stock.meta.regularMarketPrice || stock.meta.previousClose;
+                                const prevClose = stock.meta.previousClose;
+                                const change = ((currentPrice - prevClose) / prevClose) * 100;
+                                
+                                results[symbol] = {
+                                    price: currentPrice,
+                                    change: change,
+                                    prevClose: prevClose,
+                                    timestamp: new Date().toLocaleTimeString(),
+                                    error: false
+                                };
+                            }
+                        } catch (error) {
+                            console.error(`${symbol} 데이터 가져오기 실패:`, error);
+                            results[symbol] = {
+                                price: 0,
+                                change: 0,
+                                prevClose: 0,
+                                error: true,
+                                timestamp: new Date().toLocaleTimeString()
+                            };
+                        }
+                    }
+                    
+                    setStockData(prev => ({ ...prev, ...results }));
+                } catch (error) {
+                    console.error('주식 데이터 가져오기 실패:', error);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            // 주식 데이터 가져오기
+            const getStockData = (symbol) => {
+                return stockData[symbol] || { price: 0, change: 0, prevClose: 0, loading: true };
+            };
+
+            // 관심종목 추가
+            const addToWatchlist = () => {
+                if (newSymbol && !watchlist.includes(newSymbol.toUpperCase())) {
+                    setWatchlist([...watchlist, newSymbol.toUpperCase()]);
+                    setNewSymbol('');
+                }
+            };
+
+            // 보유종목 추가
+            const addToPortfolio = () => {
+                if (newPortfolioStock.symbol && newPortfolioStock.quantity && newPortfolioStock.avgPrice) {
+                    const stock = {
+                        ...newPortfolioStock,
+                        symbol: newPortfolioStock.symbol.toUpperCase(),
+                        quantity: parseFloat(newPortfolioStock.quantity),
+                        avgPrice: parseFloat(newPortfolioStock.avgPrice),
+                        id: Date.now()
+                    };
+                    setPortfolio([...portfolio, stock]);
+                    setNewPortfolioStock({ symbol: '', quantity: '', avgPrice: '' });
+                }
+            };
+
+            // 알림 확인
+            const checkAlerts = () => {
+                const newNotifications = [];
+                
+                // 관심종목 5% 이상 변동 체크
+                watchlist.forEach(symbol => {
+                    const data = getStockData(symbol);
+                    const changePercent = Math.abs(data.change);
+                    
+                    if (changePercent >= 5 && !data.error && !data.loading) {
+                        newNotifications.push({
+                            id: Date.now() + Math.random(),
+                            type: data.change > 0 ? 'surge' : 'drop',
+                            symbol,
+                            change: data.change,
+                            price: data.price,
+                            timestamp: new Date().toLocaleTimeString()
+                        });
+                    }
+                });
+
+                // 보유종목 급등/급락 체크
+                portfolio.forEach(stock => {
+                    const data = getStockData(stock.symbol);
+                    const changePercent = Math.abs(data.change);
+                    
+                    if (changePercent >= 5 && !data.error && !data.loading) {
+                        newNotifications.push({
+                            id: Date.now() + Math.random(),
+                            type: data.change > 0 ? 'portfolio_surge' : 'portfolio_drop',
+                            symbol: stock.symbol,
+                            change: data.change,
+                            price: data.price,
+                            quantity: stock.quantity,
+                            timestamp: new Date().toLocaleTimeString()
+                        });
+                    }
+                });
+
+                if (newNotifications.length > 0) {
+                    setNotifications(prev => [...newNotifications, ...prev].slice(0, 50));
+                    
+                    // 브라우저 알림 (권한이 있는 경우)
+                    if (Notification.permission === 'granted') {
+                        newNotifications.forEach(notif => {
+                            new Notification(`${notif.symbol} ${notif.type.includes('surge') ? '급등' : '급락'}`, {
+                                body: `${notif.change > 0 ? '+' : ''}${notif.change.toFixed(2)}% 변동`,
+                                icon: 'icon-192.png'
+                            });
+                        });
+                    }
+                }
+            };
+
+            // 수익률 계산
+            const calculateReturn = (currentPrice, avgPrice, quantity) => {
+                const totalCost = avgPrice * quantity;
+                const currentValue = currentPrice * quantity;
+                const returnAmount = currentValue - totalCost;
+                const returnPercent = (returnAmount / totalCost) * 100;
+                
+                return { returnAmount, returnPercent };
+            };
+
+            // 알림 권한 요청
+            const requestNotificationPermission = () => {
+                if ('Notification' in window) {
+                    Notification.requestPermission();
+                }
+            };
+
+            // 모든 종목 데이터 업데이트
+            useEffect(() => {
+                const allSymbols = [...new Set([...watchlist, ...portfolio.map(p => p.symbol)])];
+                if (allSymbols.length > 0) {
+                    fetchStockData(allSymbols);
+                }
+            }, [watchlist, portfolio]);
+
+            // 정기적으로 데이터 업데이트 (5분마다)
+            useEffect(() => {
+                const interval = setInterval(() => {
+                    const allSymbols = [...new Set([...watchlist, ...portfolio.map(p => p.symbol)])];
+                    if (allSymbols.length > 0) {
+                        fetchStockData(allSymbols);
+                    }
+                }, 300000); // 5분 = 300,000ms
+                
+                return () => clearInterval(interval);
+            }, [watchlist, portfolio]);
+
+            // 정기적으로 알림 체크
+            useEffect(() => {
+                const interval = setInterval(checkAlerts, 60000); // 1분마다 체크
+                return () => clearInterval(interval);
+            }, [watchlist, portfolio, stockData]);
+
+            // 첫 로드 시 알림 권한 요청
+            useEffect(() => {
+                requestNotificationPermission();
+            }, []);
+
+            return (
+                <div className="min-h-screen bg-gray-50 p-4">
+                    <div className="max-w-6xl mx-auto">
+                        {/* 헤더 */}
+                        <div className="bg-white rounded-lg shadow-md p-6 mb-6">
+                            <div className="flex items-center justify-between">
+                                <h1 className="text-2xl font-bold text-gray-800">주식 모니터링</h1>
+                                <div className="flex items-center space-x-2">
+                                    <Bell className="text-blue-500" size={24} />
+                                    <span className="bg-red-500 text-white text-xs rounded-full px-2 py-1">
+                                        {notifications.length}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                            {/* 관심종목 */}
+                            <div className="bg-white rounded-lg shadow-md p-6">
+                                <h2 className="text-xl font-semibold mb-4 text-gray-800">관심종목</h2>
+                                
+                                <div className="flex mb-4">
+                                    <input
+                                        type="text"
+                                        value={newSymbol}
+                                        onChange={(e) => setNewSymbol(e.target.value)}
+                                        placeholder="종목 코드 (예: AAPL)"
+                                        className="flex-1 px-3 py-2 border border-gray-300 rounded-l-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                        onKeyPress={(e) => e.key === 'Enter' && addToWatchlist()}
+                                    />
+                                    <button
+                                        onClick={addToWatchlist}
+                                        className="bg-blue-500 text-white px-4 py-2 rounded-r-md hover:bg-blue-600 transition-colors"
+                                    >
+                                        <Plus size={20} />
+                                    </button>
+                                </div>
+
+                                <div className="space-y-3">
+                                    {watchlist.map(symbol => {
+                                        const data = getStockData(symbol);
+                                        const isPositive = data.change > 0;
+                                        
+                                        return (
+                                            <div key={symbol} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                                                <div>
+                                                    <div className="font-semibold text-gray-800">{symbol}</div>
+                                                    <div className="text-sm text-gray-600">
+                                                        {data.error ? '데이터 오류' : data.loading ? '로딩중...' : `$${data.price.toFixed(2)}`}
+                                                    </div>
+                                                    {data.timestamp && (
+                                                        <div className="text-xs text-gray-400">
+                                                            {data.timestamp}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div className="text-right">
+                                                    <div className={`font-semibold ${data.error ? 'text-gray-500' : (isPositive ? 'text-green-600' : 'text-red-600')}`}>
+                                                        {data.error ? 'N/A' : data.loading ? '...' : `${isPositive ? '+' : ''}${data.change.toFixed(2)}%`}
+                                                    </div>
+                                                    <button
+                                                        onClick={() => setWatchlist(watchlist.filter(s => s !== symbol))}
+                                                        className="text-red-500 hover:text-red-700 mt-1"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* 보유종목 */}
+                            <div className="bg-white rounded-lg shadow-md p-6">
+                                <h2 className="text-xl font-semibold mb-4 text-gray-800">보유종목</h2>
+                                
+                                <div className="space-y-3 mb-4">
+                                    <input
+                                        type="text"
+                                        value={newPortfolioStock.symbol}
+                                        onChange={(e) => setNewPortfolioStock({...newPortfolioStock, symbol: e.target.value})}
+                                        placeholder="종목 코드"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                    <input
+                                        type="number"
+                                        value={newPortfolioStock.quantity}
+                                        onChange={(e) => setNewPortfolioStock({...newPortfolioStock, quantity: e.target.value})}
+                                        placeholder="보유 수량"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                    <input
+                                        type="number"
+                                        value={newPortfolioStock.avgPrice}
+                                        onChange={(e) => setNewPortfolioStock({...newPortfolioStock, avgPrice: e.target.value})}
+                                        placeholder="평균 단가"
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                    <button
+                                        onClick={addToPortfolio}
+                                        className="w-full bg-green-500 text-white py-2 rounded-md hover:bg-green-600 transition-colors"
+                                    >
+                                        추가
+                                    </button>
+                                </div>
+
+                                <div className="space-y-3">
+                                    {portfolio.map(stock => {
+                                        const data = getStockData(stock.symbol);
+                                        const returns = calculateReturn(data.price, stock.avgPrice, stock.quantity);
+                                        const isProfit = returns.returnPercent > 0;
+                                        
+                                        return (
+                                            <div key={stock.id} className="p-3 bg-gray-50 rounded-lg">
+                                                <div className="flex justify-between items-start mb-2">
+                                                    <div>
+                                                        <div className="font-semibold text-gray-800">{stock.symbol}</div>
+                                                        <div className="text-sm text-gray-600">
+                                                            {stock.quantity}주 @ ${stock.avgPrice.toFixed(2)}
+                                                        </div>
+                                                    </div>
+                                                    <button
+                                                        onClick={() => setPortfolio(portfolio.filter(s => s.id !== stock.id))}
+                                                        className="text-red-500 hover:text-red-700"
+                                                    >
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </div>
+                                                
+                                                <div className="text-sm">
+                                                    <div className="flex justify-between">
+                                                        <span>현재가:</span>
+                                                        <span>{data.error ? 'N/A' : `$${data.price.toFixed(2)}`}</span>
+                                                    </div>
+                                                    <div className="flex justify-between">
+                                                        <span>일일 변동:</span>
+                                                        <span className={data.change > 0 ? 'text-green-600' : 'text-red-600'}>
+                                                            {data.error ? 'N/A' : `${data.change > 0 ? '+' : ''}${data.change.toFixed(2)}%`}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex justify-between font-semibold">
+                                                        <span>수익률:</span>
+                                                        <span className={isProfit ? 'text-green-600' : 'text-red-600'}>
+                                                            {data.error ? 'N/A' : `${isProfit ? '+' : ''}$${returns.returnAmount.toFixed(2)} (${returns.returnPercent.toFixed(2)}%)`}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+
+                            {/* 알림 */}
+                            <div className="bg-white rounded-lg shadow-md p-6">
+                                <h2 className="text-xl font-semibold mb-4 text-gray-800">알림</h2>
+                                
+                                <div className="space-y-3 max-h-96 overflow-y-auto">
+                                    {notifications.length === 0 ? (
+                                        <p className="text-gray-500 text-center py-8">알림이 없습니다</p>
+                                    ) : (
+                                        notifications.map(notification => (
+                                            <div key={notification.id} className="p-3 bg-gray-50 rounded-lg border-l-4 border-blue-500">
+                                                <div className="flex items-start space-x-3">
+                                                    <div className="flex-shrink-0">
+                                                        {notification.type === 'surge' || notification.type === 'portfolio_surge' ? (
+                                                            <TrendingUp className="text-green-500" size={20} />
+                                                        ) : (
+                                                            <TrendingDown className="text-red-500" size={20} />
+                                                        )}
+                                                    </div>
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="font-semibold text-gray-800">
+                                                            {notification.symbol}
+                                                        </div>
+                                                        <div className="text-sm text-gray-600">
+                                                            {notification.type.includes('surge') ? '급등' : '급락'}: 
+                                                            <span className={notification.change > 0 ? 'text-green-600' : 'text-red-600'}>
+                                                                {' '}{notification.change > 0 ? '+' : ''}{notification.change.toFixed(2)}%
+                                                            </span>
+                                                        </div>
+                                                        <div className="text-xs text-gray-500 mt-1">
+                                                            {notification.timestamp}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 하단 정보 */}
+                        <div className="mt-6 bg-white rounded-lg shadow-md p-6">
+                            <div className="text-sm text-gray-600 space-y-1">
+                                <p>• 5% 이상 변동 시 자동 알림</p>
+                                <p>• 보유종목 수익률 실시간 계산</p>
+                                <p>• 데이터는 5분마다 자동 업데이트</p>
+                                <p>• 야후 파이낸스 API 실시간 데이터 사용</p>
+                                {loading && <p className="text-blue-600">⏳ 데이터 업데이트 중...</p>}
+                                <div className="mt-4 p-3 bg-blue-50 rounded-md">
+                                    <p className="text-blue-800 font-medium">💡 사용법:</p>
+                                    <ul className="text-blue-700 text-sm mt-2 space-y-1">
+                                        <li>• 미국 주식: AAPL, GOOGL, TSLA 등</li>
+                                        <li>• 한국 주식: 005930.KS (삼성전자) 등</li>
+                                        <li>• 브라우저 알림 허용 시 데스크톱 알림 제공</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        ReactDOM.render(<StockMonitorApp />, document.getElementById('root'));
+    </script>
+</body>
+</html>
