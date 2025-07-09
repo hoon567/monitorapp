@@ -97,7 +97,27 @@
                 localStorage.setItem('notifications', JSON.stringify(notifications));
             }, [notifications]);
 
-            // 한국 주식 모의 데이터 (실제 서비스에서는 한국투자증권 API 등 사용)
+            // 한국 주식시장 거래시간 체크
+            const isKoreanMarketHours = () => {
+                const now = new Date();
+                const hours = now.getHours();
+                const minutes = now.getMinutes();
+                const currentTime = hours * 100 + minutes;
+                
+                // 한국시간 기준 (UTC+9)
+                // 정규거래: 09:00 ~ 15:30
+                // 시간외거래: 08:30 ~ 09:00, 15:30 ~ 16:00
+                return (currentTime >= 830 && currentTime <= 1600);
+            };
+
+            // 스마트 업데이트 주기 설정
+            const getUpdateInterval = () => {
+                if (isKoreanMarketHours()) {
+                    return 3600000; // 1시간 (거래시간 중)
+                } else {
+                    return 21600000; // 6시간 (거래시간 외)
+                }
+            };
             const koreanStockData = {
                 '005930.KS': { name: '삼성전자', price: 71000, change: 1.8 },
                 '000660.KS': { name: 'SK하이닉스', price: 134000, change: -2.1 },
@@ -309,16 +329,36 @@
                 }
             }, [watchlist, portfolio]);
 
-            // 정기적으로 데이터 업데이트 (5분마다)
+            // 정기적으로 데이터 업데이트 (스마트 주기)
             useEffect(() => {
-                const interval = setInterval(() => {
+                const updateData = () => {
                     const allSymbols = [...new Set([...watchlist, ...portfolio.map(p => p.symbol)])];
                     if (allSymbols.length > 0) {
                         fetchStockData(allSymbols);
                     }
-                }, 300000); // 5분 = 300,000ms
+                };
+
+                // 초기 업데이트
+                updateData();
+
+                // 스마트 인터벌 설정
+                const setSmartInterval = () => {
+                    const interval = getUpdateInterval();
+                    return setInterval(updateData, interval);
+                };
+
+                const intervalId = setSmartInterval();
                 
-                return () => clearInterval(interval);
+                // 1시간마다 인터벌 재설정 (거래시간 변경 감지)
+                const hourlyCheck = setInterval(() => {
+                    clearInterval(intervalId);
+                    intervalId = setSmartInterval();
+                }, 3600000);
+
+                return () => {
+                    clearInterval(intervalId);
+                    clearInterval(hourlyCheck);
+                };
             }, [watchlist, portfolio]);
 
             // 정기적으로 알림 체크
@@ -536,7 +576,8 @@
                             <div className="text-sm text-gray-600 space-y-1">
                                 <p>• 5% 이상 변동 시 자동 알림</p>
                                 <p>• 보유종목 수익률 실시간 계산</p>
-                                <p>• 데이터는 5분마다 자동 업데이트</p>
+                                <p>• 거래시간 중 1시간마다, 시간외 6시간마다 자동 업데이트</p>
+                                <p>• 한국 거래시간: 08:30~16:00 (정규+시간외)</p>
                                 <p>• 야후 파이낸스 API 실시간 데이터 사용</p>
                                 {loading && <p className="text-blue-600">⏳ 데이터 업데이트 중...</p>}
                                 <div className="mt-4 p-3 bg-blue-50 rounded-md">
